@@ -28,6 +28,7 @@ const App: React.FC = () => {
   const [isMoving, setIsMoving] = useState(false);
   const [shake, setShake] = useState(false);
   const [showInstructions, setShowInstructions] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
   
   // Feedback Visual y Guardado
   const [aiCommentary, setAiCommentary] = useState<string>('');
@@ -61,6 +62,7 @@ const App: React.FC = () => {
     };
     localStorage.setItem(`${SAVE_KEY_PREFIX}${id}`, JSON.stringify(saveObj));
     spawnJuice("MISIÓN GUARDADA", "#10b981");
+    setIsPaused(false);
   };
 
   const loadGame = (game: SavedGame) => {
@@ -104,6 +106,7 @@ const App: React.FC = () => {
   };
 
   const rollDice = async () => {
+    if (isMoving) return;
     setPhase('DICE_ROLLING');
     const result = Math.floor(Math.random() * 6) + 1;
     setDiceResult(result);
@@ -125,6 +128,7 @@ const App: React.FC = () => {
         setTimeout(moveStep, 250);
       } else {
         setIsMoving(false);
+        // Accion automatica al caer
         handleTileLand();
       }
     };
@@ -132,7 +136,7 @@ const App: React.FC = () => {
   };
 
   const handleTileLand = async () => {
-    const tile = BOARD_TILES[currentPlayer.currentTileIndex];
+    const tile = BOARD_TILES[players[currentPlayerIndex].currentTileIndex];
     if (tile.type === TileType.SUBJECT) {
       setLoading(true);
       const question = await fetchQuestion(SUBJECTS[Math.floor(Math.random() * SUBJECTS.length)]);
@@ -153,9 +157,10 @@ const App: React.FC = () => {
         return updated;
       });
       triggerShake();
-      nextTurn();
+      // Pequeño delay para que el usuario vea dónde cayó antes de pasar el turno
+      setTimeout(() => nextTurn(), 1000);
     } else {
-      nextTurn();
+      setTimeout(() => nextTurn(), 1000);
     }
   };
 
@@ -220,10 +225,21 @@ const App: React.FC = () => {
       return updated;
     });
     setChallengeType(null);
-    if (players[currentPlayerIndex].conqueredZones.length >= 4) {
+    // Verificamos victoria inmediata despues de actualizar el estado
+    // pero useEffect o la lectura directa del estado actualizado es mejor.
+    // Usaremos una variable local para la comprobación rápida.
+    const currentZonesCount = players[currentPlayerIndex].conqueredZones.length + 1;
+    if (currentZonesCount >= 4) {
        setPhase('WIN_SCREEN');
     } else {
       nextTurn();
+    }
+  };
+
+  const exitToHome = () => {
+    if (confirm("¿Estás seguro de que quieres salir a la pantalla de inicio? Se perderá el progreso no guardado.")) {
+      setPhase('SETUP');
+      setIsPaused(false);
     }
   };
 
@@ -316,6 +332,14 @@ const App: React.FC = () => {
       {/* HUD SUPERIOR */}
       <div className="p-2 md:p-4 bg-slate-900/90 backdrop-blur-3xl border-b border-white/10 flex justify-between items-center z-50 sticky top-0 shadow-xl">
         <div className="flex items-center gap-3 md:gap-6">
+          <button 
+            onClick={() => setIsPaused(true)}
+            className="w-10 h-10 md:w-12 md:h-12 rounded-xl bg-slate-800 border border-white/10 flex items-center justify-center text-lg hover:bg-slate-700 transition-all shadow-lg"
+            title="Pausa"
+          >
+            ⏸️
+          </button>
+          
           <div className="relative group">
             <div className="w-12 h-12 md:w-20 md:h-20 rounded-[1rem] md:rounded-[1.5rem] flex items-center justify-center text-3xl md:text-5xl border-2 border-white/20 transition-all group-hover:scale-105 shadow-inner" style={{ backgroundColor: currentPlayer?.color }}>
                {currentPlayer?.avatar}
@@ -342,18 +366,10 @@ const App: React.FC = () => {
           </div>
         </div>
 
-        <div className="flex gap-2 items-center">
-          <button 
-            onClick={saveGame}
-            className="w-10 h-10 md:w-12 md:h-12 rounded-xl bg-slate-800 border border-white/10 flex items-center justify-center text-lg hover:bg-emerald-600 transition-all shadow-lg"
-            title="Guardar"
-          >
-            💾
-          </button>
-          
+        <div className="flex gap-4 items-center">
           <div className="flex gap-1 bg-slate-950/60 p-1.5 rounded-xl border border-white/5">
              {Object.values(ZoneType).map(zone => (
-               <div key={zone} className={`w-8 h-8 md:w-12 md:h-12 rounded-lg flex items-center justify-center transition-all duration-500 border-2 ${currentPlayer?.conqueredZones.includes(zone) ? 'bg-emerald-500/20 border-emerald-500' : 'bg-slate-800/40 border-slate-700 opacity-20'}`}>
+               <div key={zone} className={`w-8 h-8 md:w-12 md:h-12 rounded-lg flex items-center justify-center transition-all duration-500 border-2 ${currentPlayer?.conqueredZones.includes(zone) ? 'bg-emerald-500/20 border-emerald-500 shadow-[0_0_10px_#10b98144]' : 'bg-slate-800/40 border-slate-700 opacity-20'}`}>
                  <span className="text-xs md:text-lg">
                     {zone === ZoneType.CRITICAL_THINKING && '🧠'}
                     {zone === ZoneType.MEMORY && '👁️'}
@@ -403,7 +419,7 @@ const App: React.FC = () => {
             );
           })}
 
-          {/* CENTRO DEL TABLERO - DADO REDUCIDO */}
+          {/* CENTRO DEL TABLERO */}
           <div className="col-start-5 col-end-10 row-start-5 row-end-10 flex flex-col items-center justify-center gap-3 md:gap-6 bg-slate-950/60 rounded-[2rem] md:rounded-[4rem] border border-white/5 backdrop-blur-md shadow-inner relative">
              {phase === 'DICE_ROLLING' ? (
                <div className="text-5xl md:text-8xl animate-spin text-white">🎲</div>
@@ -419,7 +435,7 @@ const App: React.FC = () => {
                  <div className="text-white font-black text-[10px] md:text-lg opacity-60">Result: {diceResult}</div>
                </div>
              ) : (
-               <div className="text-xl md:text-4xl font-black italic text-white animate-pulse tracking-tight text-center px-4">EN CAMINO...</div>
+               <div className="text-xl md:text-4xl font-black italic text-white animate-pulse tracking-tight text-center px-4 uppercase">Explorando...</div>
              )}
           </div>
         </div>
@@ -432,6 +448,17 @@ const App: React.FC = () => {
       </div>
 
       {/* Modales */}
+      <Modal isOpen={isPaused}>
+        <Card className="bg-slate-900 border-indigo-500/50 p-10 rounded-[3rem] shadow-2xl space-y-6">
+          <h2 className="text-4xl font-black italic text-indigo-400 text-center">MISIÓN PAUSADA</h2>
+          <div className="space-y-4">
+             <Button onClick={() => setIsPaused(false)} className="w-full py-4 text-xl">CONTINUAR</Button>
+             <Button onClick={saveGame} variant="secondary" className="w-full py-4 text-xl">GUARDAR PROGRESO</Button>
+             <Button onClick={exitToHome} variant="danger" className="w-full py-4 text-xl">SALIR AL INICIO</Button>
+          </div>
+        </Card>
+      </Modal>
+
       <Modal isOpen={phase === 'MYSTERY_EVENT'}>
         <Card className="bg-purple-900/90 border-purple-400 text-center space-y-6 p-10 rounded-[3rem] shadow-2xl">
           <div className="text-7xl animate-bounce mb-2">🌀</div>
